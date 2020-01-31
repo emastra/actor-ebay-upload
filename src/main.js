@@ -164,10 +164,10 @@ Apify.main(async () => {
 
                 const dnsRes = await dnsPromises.lookup(proxyAddress);
                 const proxyIP = dnsRes.address;
-                console.log('proxyIP', proxyIP);
+                console.log('proxyIP', proxyIP); // 52.21.149.133 // 34.198.112.94
 
                 anticaptcha.setProxyType("http");
-                anticaptcha.setProxyAddress(proxyIP);
+                anticaptcha.setProxyAddress('52.21.149.133'); // proxyIP
                 anticaptcha.setProxyPort(proxyPort);
                 anticaptcha.setProxyLogin(proxyLogin);
                 anticaptcha.setProxyPassword(proxyPass);
