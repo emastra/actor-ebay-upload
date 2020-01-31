@@ -1,5 +1,10 @@
 const Apify = require('apify');
 const { log, sleep, requestAsBrowser } = Apify.utils;
+const dns = require('dns');
+const dnsPromises = dns.promises;
+const querystring = require('querystring');
+
+const anticaptcha = require('./anticaptcha')('76dbbc3a8a13f1b092d2104398379f8c');
 
 const { LOGIN_URL, START_URL, BASE_ITEM_URL, COOKIES } = require('./constants');
 
@@ -61,16 +66,15 @@ Apify.main(async () => {
             // userAgent: userAgent,
             // useSessionPool: true,
             timeout: 120 * 1000,
-            useChrome: true,
-            stealth: true,
-            headless: true,
+            // useChrome: true,
+            // stealth: true,
+            headless: false,
             // devtools: true
         },
 
         gotoFunction: async ({ request, page }) => {
-            // await Apify.utils.puppeteer.blockRequests(page, {
-            //     extraUrlPatterns: ['.mp4']
-            // });
+            // await Apify.utils.puppeteer.blockRequests(page);
+
             if (mode === 'upload') {
                 await page.setCookie(...COOKIES);
             }
@@ -88,27 +92,150 @@ Apify.main(async () => {
             //
 
             if (label === 'LOGIN') {
+                let getChallengeUrl;
+                await page.setRequestInterception(true);
+                page.on('request', request => {
+                    if (request.url().includes('https://api-na.geetest.com/get.php?')) {
+                        getChallengeUrl = request.url();
+                        console.log('getChallengeUrl:', getChallengeUrl);
+                        request.abort();
+                    }
+                    else {
+                        request.continue();
+                    }
+
+                });
+
                 log.info(`
                     Login mode.
                     Actor will login and save cookies in your KV store.
                     Once done, run the actor in "upload" mode.
                 `);
 
-                // Here I was saving cookies logging in manually
-                console.log(1);
-                // type and click
-                await page.waitForNavigation({ timeout: 120*1000 });
-                console.log(2);
+                // check if captcha is on screen
+                try {
+                    await page.waitForSelector('div.geetest_radar_tip', { timeout: 15*1000 });
+                } catch (err) {
+                    console.log('no recaptcha now. keep going.');
+                }
 
-                await page.waitForNavigation({ timeout: 240*1000 });
-                console.log(3);
+                // check if login inputs are on screen
+                const isCredInput = await page.evaluate(() => !!document.getElementById('userid'));
 
-                currentLocation = await page.evaluate(() => window.location.href);
+                if (isCredInput) {
+                    // log in
+                    await page.waitForSelector('#userid');
+                    await page.waitForSelector('#pass');
+
+                    await page.type('#userid', username, { delay: 100 });
+                    await page.type('#pass', password, { delay: 100 });
+                    const [ response ] = await Promise.all([
+                        page.waitForNavigation({ waitUntil: 'load', timeout: 60*1000 }),
+                        page.click('#sgnBt')
+                    ]);
+
+                    await page.waitForSelector('div.geetest_radar_tip', { timeout: 15*1000 });
+                }
+
+                // get querystring from getChallengeUrl
+                const qstring = getChallengeUrl.split('?')[1];
+                // grab codes needed for solving captcha (gt, challenge)
+                const { gt, challenge } = querystring.parse(qstring);
+                console.log('tokens:', gt, challenge);
+
+                // await page.waitForNavigation({ timeout: 360*1000 });
+                // return;
+
+                let currentLocation = await page.evaluate(() => window.location.href);
                 console.log('currentLocation', currentLocation);
 
-                const cookies = await page.cookies();
-                console.log(cookies);
+                // set anticaptcha
+                anticaptcha.setWebsiteURL(currentLocation); //.split('?')[0]
+                anticaptcha.setWebsiteKey(gt);
+                anticaptcha.setWebsiteChallenge(challenge);
+                anticaptcha.setGeetestApiServerSubdomain('api-na.geetest.com');
+                anticaptcha.setUserAgent(userAgent);
+
+                //grab and set proxy access parameters
+                const proxyAddress = proxyUrl.split('@')[1].split(':')[0];
+                const proxyPort = proxyUrl.split('@')[1].split(':')[1].split('/')[0];
+                const proxyLogin = proxyUrl.split('@')[0].split(':')[1].replace('//', '');
+                const proxyPass = proxyUrl.split('@')[0].split(':')[2];
+
+                const dnsRes = await dnsPromises.lookup(proxyAddress);
+                const proxyIP = dnsRes.address;
+                console.log('proxyIP', proxyIP);
+
+                anticaptcha.setProxyType("http");
+                anticaptcha.setProxyAddress(proxyIP);
+                anticaptcha.setProxyPort(proxyPort);
+                anticaptcha.setProxyLogin(proxyLogin);
+                anticaptcha.setProxyPassword(proxyPass);
+
+                // check balance first
+                // get task solution and POST it
+                anticaptcha.getBalance(function (err, balance) {
+                    if (err) {
+                        console.error(err);
+                        return;
+                    }
+
+                    if (balance > 0) {
+                        anticaptcha.createGeeTestTask(function (err, taskId) {
+                            if (err) {
+                                console.error(err);
+                                return;
+                            }
+
+                            console.log(taskId);
+
+                            anticaptcha.getTaskSolution(taskId, async function (err, taskSolution) {
+                                if (err) {
+                                    console.error(err);
+                                    return;
+                                }
+
+                                // got solution
+                                console.log('taskSolution:', taskSolution);
+
+                                //
+
+                                // grab POST url (for posting solution to ebay)
+                                const { url, dCF_ticket } = await page.evaluate(() => {
+                                    const url = document.querySelector('#distilCaptchaForm').action;
+                                    const dCF_ticket = document.querySelector('input#dCF_ticket').value;
+
+                                    return { url, dCF_ticket };
+                                });
+
+                                // div.geetest_form and input#dCF_input_complete are not available in the html (I think because I aborted the request (at line 101) and captcha div remains on 'loading')
+                                // so I try to replicate the POST request
+                                const resx = await requestAsBrowser({
+                                    url,
+                                    method: 'POST',
+                                    headers: {
+                                        'x-distil-ajax': '', // ?
+                                        'content-type': 'application/x-www-form-urlencoded'
+                                    },
+                                    payload: encodeURIComponent(`dCF_ticket=${dCF_ticket}&geetest_challenge=${taskSolution.challenge}&geetest_validate=${taskSolution.validate}&geetest_seccode=${taskSolution.seccode}&isAjax=1`)
+                                });
+
+                                console.log('resx', resx);
+                            });
+                        });
+                    }
+                });
+
+                console.log('END');
+                await page.waitForNavigation({ timeout: 360*1000 });
+                console.log('END2');
             }
+
+
+
+
+
+
 
             //
 
@@ -331,45 +458,3 @@ Apify.main(async () => {
 
     log.info('Crawler Finished.');
 });
-
-// TOTHOURS: 16
-
-
-
-
-
-
-
-// const waitForElementToDisplay = (selector, timeout) => {
-//     start = new Date().getTime();
-//
-//     const go = () => {
-//         if (new Date().getTime() - timeout > start) throw new Error('waitForElementToDisplay has timed out');
-//
-//         if (document.querySelector(selector) != null) return;
-//         else setTimeout(() => go(), 100);
-//     }
-//
-//     go();
-// }
-
-// const waitUntilElementExists = (DOMSelector, MAX_TIME = 10000) => {
-//     let timeout = 0;
-//
-//     const waitForContainerElement = (resolve, reject) => {
-//         const container = document.querySelector(DOMSelector);
-//         timeout += 30;
-//
-//         if (timeout >= MAX_TIME) reject('Element not found');
-//
-//         if (!container || container.length === 0) {
-//             setTimeout(waitForContainerElement.bind(this, resolve, reject), 30);
-//         } else {
-//             resolve(container);
-//         }
-//     };
-//
-//     return new Promise((resolve, reject) => {
-//         waitForContainerElement(resolve, reject);
-//     });
-// };
