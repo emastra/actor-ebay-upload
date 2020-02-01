@@ -139,14 +139,15 @@ Apify.main(async () => {
                     await page.waitForSelector('div.geetest_radar_tip', { timeout: 15*1000 });
                 }
 
+                // await page.waitForNavigation({ timeout: 360*1000 });
+                // await page.waitForNavigation({ timeout: 360*1000 });
+                // return;
+
                 // get querystring from getChallengeUrl
                 const qstring = getChallengeUrl.split('?')[1];
                 // grab codes needed for solving captcha (gt, challenge)
                 const { gt, challenge } = querystring.parse(qstring);
                 console.log('tokens:', gt, challenge);
-
-                // await page.waitForNavigation({ timeout: 360*1000 });
-                // return;
 
                 let currentLocation = await page.evaluate(() => window.location.href);
                 console.log('currentLocation:', currentLocation);
@@ -202,7 +203,7 @@ Apify.main(async () => {
 
                                 //
 
-                                // grab POST url (for posting solution to ebay)
+                                // grab URL whre to POST solution
                                 const { url, dCF_ticket } = await page.evaluate(() => {
                                     const url = document.querySelector('#distilCaptchaForm').action;
                                     const dCF_ticket = document.querySelector('input#dCF_ticket').value;
@@ -210,8 +211,8 @@ Apify.main(async () => {
                                     return { url, dCF_ticket };
                                 });
 
-                                // 'div.geetest_form' and 'input#dCF_input_complete' are not available in the html (I think because I aborted the request (at line 101) and captcha div remains on 'loading')
-                                // so I try to replicate the POST request
+                                // The whole form is not available in the html (I think because I aborted the request (at line 101) and captcha div remains on 'loading')
+                                // so I try to replicate the POST request (but receives statusCode 405)
                                 const resx = await requestAsBrowser({
                                     url,
                                     method: 'POST',
