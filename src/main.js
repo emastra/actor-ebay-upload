@@ -94,6 +94,8 @@ Apify.main(async () => {
             if (label === 'LOGIN') {
                 let getChallengeUrl;
                 await page.setRequestInterception(true);
+                // intercept request with challenge token, grab url (that contains the token in querystring)
+                // abort request to avoid captcha image to be loaded (if image loads, token expires).
                 page.on('request', request => {
                     if (request.url().includes('https://api-na.geetest.com/get.php?')) {
                         getChallengeUrl = request.url();
@@ -116,7 +118,7 @@ Apify.main(async () => {
                 try {
                     await page.waitForSelector('div.geetest_radar_tip', { timeout: 15*1000 });
                 } catch (err) {
-                    console.log('no recaptcha now. keep going.');
+                    console.log('no recaptcha for the moment.');
                 }
 
                 // check if login inputs are on screen
@@ -147,7 +149,7 @@ Apify.main(async () => {
                 // return;
 
                 let currentLocation = await page.evaluate(() => window.location.href);
-                console.log('currentLocation', currentLocation);
+                console.log('currentLocation:', currentLocation);
 
                 // set anticaptcha
                 anticaptcha.setWebsiteURL(currentLocation); //.split('?')[0]
@@ -208,7 +210,7 @@ Apify.main(async () => {
                                     return { url, dCF_ticket };
                                 });
 
-                                // div.geetest_form and input#dCF_input_complete are not available in the html (I think because I aborted the request (at line 101) and captcha div remains on 'loading')
+                                // 'div.geetest_form' and 'input#dCF_input_complete' are not available in the html (I think because I aborted the request (at line 101) and captcha div remains on 'loading')
                                 // so I try to replicate the POST request
                                 const resx = await requestAsBrowser({
                                     url,
@@ -230,10 +232,6 @@ Apify.main(async () => {
                 await page.waitForNavigation({ timeout: 360*1000 });
                 console.log('END2');
             }
-
-
-
-
 
 
 
