@@ -4,7 +4,7 @@ const dns = require('dns');
 const dnsPromises = dns.promises;
 const querystring = require('querystring');
 
-const anticaptcha = require('./anticaptcha')('76dbbc3a8a13f1b092d2104398379f8c');
+// const anticaptcha = require('./anticaptcha')('76dbbc3a8a13f1b092d2104398379f8c');
 
 const { LOGIN_URL, START_URL, BASE_ITEM_URL, COOKIES } = require('./constants');
 
@@ -59,18 +59,19 @@ Apify.main(async () => {
         maxRequestRetries: 3,
         handlePageTimeoutSecs: 300,
         maxConcurrency: 10,
+
         launchPuppeteerOptions: {
             // useApifyProxy: true,
             proxyUrl: proxyUrl,
             // apifyProxyGroups: ['RESIDENTIAL'],
-            // userAgent: userAgent,
-            // useSessionPool: true,
+            userAgent: userAgent,
             timeout: 120 * 1000,
-            // useChrome: true,
+            // useChrome: true, // page.setRequestInterception needs chromium!!!!
             // stealth: true,
             headless: false,
             // devtools: true
         },
+        // useSessionPool: true,
 
         gotoFunction: async ({ request, page }) => {
             // await Apify.utils.puppeteer.blockRequests(page);
@@ -152,13 +153,6 @@ Apify.main(async () => {
                 let currentLocation = await page.evaluate(() => window.location.href);
                 console.log('currentLocation:', currentLocation);
 
-                // set anticaptcha
-                anticaptcha.setWebsiteURL(currentLocation); //.split('?')[0]
-                anticaptcha.setWebsiteKey(gt);
-                anticaptcha.setWebsiteChallenge(challenge);
-                anticaptcha.setGeetestApiServerSubdomain('api-na.geetest.com');
-                anticaptcha.setUserAgent(userAgent);
-
                 //grab and set proxy access parameters
                 const proxyAddress = proxyUrl.split('@')[1].split(':')[0];
                 const proxyPort = proxyUrl.split('@')[1].split(':')[1].split('/')[0];
@@ -169,69 +163,134 @@ Apify.main(async () => {
                 const proxyIP = dnsRes.address;
                 console.log('proxyIP', proxyIP); // 52.21.149.133 // 34.198.112.94
 
-                anticaptcha.setProxyType("http");
-                anticaptcha.setProxyAddress('52.21.149.133'); // proxyIP
-                anticaptcha.setProxyPort(proxyPort);
-                anticaptcha.setProxyLogin(proxyLogin);
-                anticaptcha.setProxyPassword(proxyPass);
+                const callInput = {
+                    anticaptchaToken: 'token_to_be_provided',
+                    websiteURL: currentLocation,
+                    gt,
+                    challenge,
+                    serverSubdomain: 'api-na.geetest.com',
+                    userAgent,
+                    proxyType: 'http',
+                    proxyIPAddress: proxyIP,
+                    proxyPort,
+                    proxyLogin,
+                    proxyPass
+                }
 
-                // check balance first
-                // get task solution and POST it
-                anticaptcha.getBalance(function (err, balance) {
-                    if (err) {
-                        console.error(err);
-                        return;
+                const run = await Apify.call('emastra/anti-captcha-geetest', callInput);
+                console.log('RES:', run.output.body);
+
+
+                // // set anticaptcha
+                // anticaptcha.setWebsiteURL(currentLocation); //.split('?')[0]
+                // anticaptcha.setWebsiteKey(gt);
+                // anticaptcha.setWebsiteChallenge(challenge);
+                // anticaptcha.setGeetestApiServerSubdomain('api-na.geetest.com');
+                // anticaptcha.setUserAgent(userAgent);
+                //
+                //grab and set proxy access parameters
+                // const proxyAddress = proxyUrl.split('@')[1].split(':')[0];
+                // const proxyPort = proxyUrl.split('@')[1].split(':')[1].split('/')[0];
+                // const proxyLogin = proxyUrl.split('@')[0].split(':')[1].replace('//', '');
+                // const proxyPass = proxyUrl.split('@')[0].split(':')[2];
+                //
+                // const dnsRes = await dnsPromises.lookup(proxyAddress);
+                // const proxyIP = dnsRes.address;
+                // console.log('proxyIP', proxyIP); // 52.21.149.133 // 34.198.112.94
+                //
+                // anticaptcha.setProxyType("http");
+                // anticaptcha.setProxyAddress('52.21.149.133'); // proxyIP
+                // anticaptcha.setProxyPort(proxyPort);
+                // anticaptcha.setProxyLogin(proxyLogin);
+                // anticaptcha.setProxyPassword(proxyPass);
+                //
+                // // check balance first
+                // // get task solution and POST it
+                // anticaptcha.getBalance(function (err, balance) {
+                //     if (err) {
+                //         console.error(err);
+                //         return;
+                //     }
+                //
+                //     if (balance > 0) {
+                //         anticaptcha.createGeeTestTask(function (err, taskId) {
+                //             if (err) {
+                //                 console.error(err);
+                //                 return;
+                //             }
+                //
+                //             console.log(taskId);
+                //
+                //             anticaptcha.getTaskSolution(taskId, async function (err, taskSolution) {
+                //                 if (err) {
+                //                     console.error(err);
+                //                     return;
+                //                 }
+                //
+                //                 // got solution
+                //                 console.log('taskSolution:', taskSolution);
+                //
+                //                 //
+                //
+                //                 // grab URL whre to POST solution
+                //                 const { url, dCF_ticket } = await page.evaluate(() => {
+                //                     const url = document.querySelector('#distilCaptchaForm').action;
+                //                     const dCF_ticket = document.querySelector('input#dCF_ticket').value;
+                //
+                //                     return { url, dCF_ticket };
+                //                 });
+                //
+                //                 // The whole form is not available in the html (I think because I aborted the request (at line 101) and captcha div remains on 'loading')
+                //                 // so I try to replicate the POST request (but receives statusCode 405)
+                //                 const resx = await requestAsBrowser({
+                //                     url,
+                //                     method: 'POST',
+                //                     headers: {
+                //                         // 'x-distil-ajax': '', // ?
+                //                         // 'content-type': 'application/x-www-form-urlencoded'
+                //                         'Host': 'signin.ebay.com',
+                //                         'Connection': 'keep-alive',
+                //                         'Content-Length': 375,
+                //                         'Origin': 'https://signin.ebay.com',
+                //                         'X-Distil-Ajax': 'sqqwfravdctbsvvswdrwsddsbyaafybrcw',
+                //                         'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_0) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/78.0.3904.70 Safari/537.36',
+                //                         'Content-Type': 'application/x-www-form-urlencoded',
+                //                         'Accept': '*/*',
+                //                         'Sec-Fetch-Site': 'same-origin',
+                //                         'Sec-Fetch-Mode': 'cors',
+                //                         'Referer': 'https://signin.ebay.com/ws/eBayISAPI.dll?SignIn&UsingSSL=1&pUserId=&co_partnerId=2&siteid=0&ru=https%3A%2F%2Fbulksell.ebay.com%2Fws%2FeBayISAPI.dll%3FSingleList%26forcetool%3DCUB%26guest%3D1&pageType=6115',
+                //                         'Accept-Encoding': 'gzip, deflate, br',
+                //                         'Accept-Language': 'en-US,en;q=0.9',
+                //                         'Cookie': 'DG_IID=D9306BAE-8A2D-3C0E-A096-639A386DDBE3; DG_UID=0A4FFF2E-ECED-34FF-A57C-12C3CB7FDD52; DG_ZID=89090E2F-7759-3720-8E83-01213D43CB2F; DG_ZUID=72430C4E-75FE-3134-94A4-7F473E0103ED; DG_HID=EDE7240A-9C09-38D3-A557-374FFC88A92E; DG_SID=209.99.169.61:Hf8pA0uFswVT5Nlhwk6rUt5ed0iABU0FD35ZeY/sD44'
+                //                     },
+                //                     payload: encodeURIComponent(`dCF_ticket=${dCF_ticket}&geetest_challenge=${taskSolution.challenge}&geetest_validate=${taskSolution.validate}&geetest_seccode=${taskSolution.seccode}&isAjax=1`)
+                //                 });
+                //
+                //                 console.log('resx', resx);
+                //             });
+                //         });
+                //     }
+                // });
+
+                /*
+                var distilCallbackGuard = function(callbackName) {
+                    return function() {
+                        if (typeof(window[callbackName]) === 'function') {
+                            return window[callbackName].apply(null, arguments)
+                        } else {
+                            document.getElementById('dCF_input_complete').style.display = 'inline'
+                        }
                     }
+                }
 
-                    if (balance > 0) {
-                        anticaptcha.createGeeTestTask(function (err, taskId) {
-                            if (err) {
-                                console.error(err);
-                                return;
-                            }
-
-                            console.log(taskId);
-
-                            anticaptcha.getTaskSolution(taskId, async function (err, taskSolution) {
-                                if (err) {
-                                    console.error(err);
-                                    return;
-                                }
-
-                                // got solution
-                                console.log('taskSolution:', taskSolution);
-
-                                //
-
-                                // grab URL whre to POST solution
-                                const { url, dCF_ticket } = await page.evaluate(() => {
-                                    const url = document.querySelector('#distilCaptchaForm').action;
-                                    const dCF_ticket = document.querySelector('input#dCF_ticket').value;
-
-                                    return { url, dCF_ticket };
-                                });
-
-                                // The whole form is not available in the html (I think because I aborted the request (at line 101) and captcha div remains on 'loading')
-                                // so I try to replicate the POST request (but receives statusCode 405)
-                                const resx = await requestAsBrowser({
-                                    url,
-                                    method: 'POST',
-                                    headers: {
-                                        'x-distil-ajax': '', // ?
-                                        'content-type': 'application/x-www-form-urlencoded'
-                                    },
-                                    payload: encodeURIComponent(`dCF_ticket=${dCF_ticket}&geetest_challenge=${taskSolution.challenge}&geetest_validate=${taskSolution.validate}&geetest_seccode=${taskSolution.seccode}&isAjax=1`)
-                                });
-
-                                console.log('resx', resx);
-                            });
-                        });
-                    }
-                });
+                // distilCaptchaDoneCallback
+                */
 
                 console.log('END');
                 await page.waitForNavigation({ timeout: 360*1000 });
                 console.log('END2');
+                await page.waitForNavigation({ timeout: 360*1000 });
+                console.log('END3');
             }
 
 
