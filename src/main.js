@@ -4,7 +4,7 @@ const dns = require('dns');
 const dnsPromises = dns.promises;
 const querystring = require('querystring');
 
-// const anticaptcha = require('./anticaptcha')('76dbbc3a8a13f1b092d2104398379f8c');
+// const anticaptcha = require('./anticaptcha')('token!!');
 
 const { LOGIN_URL, START_URL, BASE_ITEM_URL, COOKIES } = require('./constants');
 
